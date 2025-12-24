@@ -1,0 +1,70 @@
+# Example: Mushu with Jira Integration
+# This workflow integrates with Jira to post analysis results back to tickets
+
+name: Mushu - Jira Integration
+run-name: "🐉 Mushu: ${{ github.event.client_payload.key }} (${{ github.event.action }})"
+
+on:
+  repository_dispatch:
+    types:
+      - mushu-bug
+      - mushu-explore
+      - mushu-fix
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: mushu-${{ github.event.client_payload.key }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+      - name: Validate secrets
+        run: |
+          missing=""
+          [[ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]] && missing="$missing ANTHROPIC_API_KEY"
+          [[ -z "${{ secrets.JIRA_BASE_URL }}" ]] && missing="$missing JIRA_BASE_URL"
+          [[ -z "${{ secrets.JIRA_EMAIL }}" ]] && missing="$missing JIRA_EMAIL"
+          [[ -z "${{ secrets.JIRA_API_TOKEN }}" ]] && missing="$missing JIRA_API_TOKEN"
+          
+          if [[ -n "$missing" ]]; then
+            echo "::error::Missing secrets:$missing"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve mode
+        id: inputs
+        run: |
+          case "${{ github.event.action }}" in
+            mushu-bug) echo "mode=bug" >> $GITHUB_OUTPUT ;;
+            mushu-explore) echo "mode=explore" >> $GITHUB_OUTPUT ;;
+            mushu-fix) echo "mode=fix" >> $GITHUB_OUTPUT ;;
+          esac
+
+      - name: Run Mushu
+        uses: zafran-io/mushu@v1
+        with:
+          ticket_key: ${{ github.event.client_payload.key }}
+          ticket_summary: ${{ github.event.client_payload.summary }}
+          ticket_description: ${{ github.event.client_payload.description }}
+          analysis_mode: ${{ steps.inputs.outputs.mode }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Jira integration
+          issue_tracker: jira
+          issue_tracker_base_url: ${{ secrets.JIRA_BASE_URL }}
+          issue_tracker_email: ${{ secrets.JIRA_EMAIL }}
+          issue_tracker_api_token: ${{ secrets.JIRA_API_TOKEN }}
+

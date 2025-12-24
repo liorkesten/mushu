@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <linearGradient id="dragonGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF6B6B"/>
+      <stop offset="50%" style="stop-color:#EE5A24"/>
+      <stop offset="100%" style="stop-color:#D63031"/>
+    </linearGradient>
+    <linearGradient id="fireGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" style="stop-color:#FF9F43"/>
+      <stop offset="50%" style="stop-color:#FECA57"/>
+      <stop offset="100%" style="stop-color:#FF6B6B"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="95" fill="#1a1a2e" stroke="url(#dragonGrad)" stroke-width="3"/>
+  
+  <!-- Dragon body (stylized M for Mushu) -->
+  <path d="M 45 140 
+           Q 45 80 70 60 
+           Q 85 50 100 70 
+           Q 115 50 130 60 
+           Q 155 80 155 140
+           L 145 140
+           Q 145 90 130 75
+           Q 120 65 110 80
+           L 110 140
+           L 90 140
+           L 90 80
+           Q 80 65 70 75
+           Q 55 90 55 140
+           Z" 
+        fill="url(#dragonGrad)"/>
+  
+  <!-- Dragon eyes -->
+  <ellipse cx="75" cy="85" rx="8" ry="10" fill="#FECA57"/>
+  <ellipse cx="125" cy="85" rx="8" ry="10" fill="#FECA57"/>
+  <circle cx="77" cy="87" r="4" fill="#1a1a2e"/>
+  <circle cx="127" cy="87" r="4" fill="#1a1a2e"/>
+  
+  <!-- Fire breath -->
+  <path d="M 85 145 
+           Q 90 155 100 165 
+           Q 110 155 115 145
+           Q 105 155 100 150
+           Q 95 155 85 145" 
+        fill="url(#fireGrad)"/>
+  
+  <!-- Horns -->
+  <path d="M 60 55 Q 50 35 55 25 Q 60 40 70 55" fill="url(#dragonGrad)"/>
+  <path d="M 140 55 Q 150 35 145 25 Q 140 40 130 55" fill="url(#dragonGrad)"/>
+  
+  <!-- Sparkles -->
+  <circle cx="40" cy="50" r="3" fill="#FECA57" opacity="0.8"/>
+  <circle cx="160" cy="50" r="3" fill="#FECA57" opacity="0.8"/>
+  <circle cx="30" cy="100" r="2" fill="#FF6B6B" opacity="0.6"/>
+  <circle cx="170" cy="100" r="2" fill="#FF6B6B" opacity="0.6"/>
+</svg>
+

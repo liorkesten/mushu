@@ -1,0 +1,60 @@
+# Example: Mushu with GitHub Issues
+# Auto-analyze bugs and feature requests from GitHub Issues
+
+name: Mushu - GitHub Issues
+run-name: "🐉 Mushu: #${{ github.event.issue.number }}"
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: mushu-issue-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    # Run on bug issues or when 'mushu' label is added
+    if: |
+      (github.event.action == 'opened' && contains(github.event.issue.labels.*.name, 'bug')) ||
+      (github.event.action == 'labeled' && github.event.label.name == 'mushu') ||
+      (github.event.action == 'labeled' && github.event.label.name == 'mushu-fix')
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine mode
+        id: mode
+        run: |
+          if [[ "${{ contains(github.event.issue.labels.*.name, 'mushu-fix') }}" == "true" ]]; then
+            echo "mode=fix" >> $GITHUB_OUTPUT
+          elif [[ "${{ contains(github.event.issue.labels.*.name, 'bug') }}" == "true" ]]; then
+            echo "mode=bug" >> $GITHUB_OUTPUT
+          else
+            echo "mode=explore" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Mushu
+        uses: zafran-io/mushu@v1
+        with:
+          ticket_key: ${{ github.event.issue.number }}
+          ticket_summary: ${{ github.event.issue.title }}
+          ticket_description: ${{ github.event.issue.body }}
+          analysis_mode: ${{ steps.mode.outputs.mode }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          issue_tracker: github
+          issue_tracker_base_url: ${{ github.server_url }}/${{ github.repository }}
+

@@ -1,0 +1,96 @@
+# Example: Basic Mushu Workflow
+# This workflow runs Mushu on manual trigger or repository dispatch events
+
+name: Mushu - AI Code Analyst
+run-name: "🐉 Mushu: ${{ github.event.client_payload.key || github.event.inputs.ticket_key }} (${{ github.event.action || github.event.inputs.analysis_mode }})"
+
+on:
+  # Manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      ticket_key:
+        description: "Ticket key (e.g., PROJ-123)"
+        required: true
+        type: string
+      ticket_summary:
+        description: "Ticket summary"
+        required: true
+        type: string
+      ticket_description:
+        description: "Ticket description"
+        required: false
+        type: string
+        default: ""
+      analysis_mode:
+        description: "Analysis mode"
+        required: true
+        type: choice
+        options:
+          - bug
+          - explore
+          - fix
+
+  # Triggered by external systems (Jira, Linear, etc.)
+  repository_dispatch:
+    types:
+      - mushu-bug
+      - mushu-explore
+      - mushu-fix
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: mushu-${{ github.event.client_payload.key || github.event.inputs.ticket_key }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+      - name: Validate secrets
+        run: |
+          if [[ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]]; then
+            echo "::error::Missing ANTHROPIC_API_KEY secret"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve inputs
+        id: inputs
+        run: |
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            echo "key=${{ github.event.client_payload.key }}" >> $GITHUB_OUTPUT
+            echo "summary=${{ github.event.client_payload.summary }}" >> $GITHUB_OUTPUT
+            echo "description=${{ github.event.client_payload.description }}" >> $GITHUB_OUTPUT
+            
+            case "${{ github.event.action }}" in
+              mushu-bug) echo "mode=bug" >> $GITHUB_OUTPUT ;;
+              mushu-explore) echo "mode=explore" >> $GITHUB_OUTPUT ;;
+              mushu-fix) echo "mode=fix" >> $GITHUB_OUTPUT ;;
+            esac
+          else
+            echo "key=${{ github.event.inputs.ticket_key }}" >> $GITHUB_OUTPUT
+            echo "summary=${{ github.event.inputs.ticket_summary }}" >> $GITHUB_OUTPUT
+            echo "description=${{ github.event.inputs.ticket_description }}" >> $GITHUB_OUTPUT
+            echo "mode=${{ github.event.inputs.analysis_mode }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Mushu
+        uses: zafran-io/mushu@v1
+        with:
+          ticket_key: ${{ steps.inputs.outputs.key }}
+          ticket_summary: ${{ steps.inputs.outputs.summary }}
+          ticket_description: ${{ steps.inputs.outputs.description }}
+          analysis_mode: ${{ steps.inputs.outputs.mode }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
