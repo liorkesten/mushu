@@ -1,0 +1,94 @@
+# Example: Full Integration (Jira + Slack)
+# Complete setup with all integrations
+
+name: Mushu Full
+run-name: "🐉 ${{ github.event.client_payload.key }}"
+
+on:
+  repository_dispatch:
+    types: [mushu-bug, mushu-explore, mushu-fix]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: mushu-${{ github.event.client_payload.key }}
+  cancel-in-progress: true
+
+env:
+  TICKET_KEY: ${{ github.event.client_payload.key }}
+  TICKET_SUMMARY: ${{ github.event.client_payload.summary }}
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      analysis: ${{ steps.mushu.outputs.analysis }}
+      pr_url: ${{ steps.mushu.outputs.pr_url }}
+      has_changes: ${{ steps.mushu.outputs.has_changes }}
+      mode: ${{ steps.mode.outputs.value }}
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve mode
+        id: mode
+        run: |
+          case "${{ github.event.action }}" in
+            mushu-bug) echo "value=bug" >> $GITHUB_OUTPUT ;;
+            mushu-explore) echo "value=explore" >> $GITHUB_OUTPUT ;;
+            mushu-fix) echo "value=fix" >> $GITHUB_OUTPUT ;;
+          esac
+
+      - name: Analyze
+        id: mushu
+        uses: liorkesten/mushu@v1
+        with:
+          ticket_key: ${{ env.TICKET_KEY }}
+          ticket_summary: ${{ env.TICKET_SUMMARY }}
+          ticket_description: ${{ github.event.client_payload.description }}
+          analysis_mode: ${{ steps.mode.outputs.value }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+  post-jira:
+    needs: analyze
+    runs-on: ubuntu-latest
+    if: always() && needs.analyze.result == 'success'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Post to Jira
+        uses: liorkesten/mushu/integrations/jira@v1
+        with:
+          jira_base_url: ${{ secrets.JIRA_BASE_URL }}
+          jira_email: ${{ secrets.JIRA_EMAIL }}
+          jira_api_token: ${{ secrets.JIRA_API_TOKEN }}
+          ticket_key: ${{ env.TICKET_KEY }}
+          analysis: ${{ needs.analyze.outputs.analysis }}
+          analysis_mode: ${{ needs.analyze.outputs.mode }}
+          pr_url: ${{ needs.analyze.outputs.pr_url }}
+          has_changes: ${{ needs.analyze.outputs.has_changes }}
+
+  notify-slack:
+    needs: analyze
+    runs-on: ubuntu-latest
+    if: always() && needs.analyze.result == 'success'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Notify Slack
+        uses: liorkesten/mushu/integrations/slack@v1
+        with:
+          slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          ticket_key: ${{ env.TICKET_KEY }}
+          ticket_summary: ${{ env.TICKET_SUMMARY }}
+          analysis_mode: ${{ needs.analyze.outputs.mode }}
+          ticket_url: ${{ secrets.JIRA_BASE_URL }}/browse/${{ env.TICKET_KEY }}
+          pr_url: ${{ needs.analyze.outputs.pr_url }}
+          has_changes: ${{ needs.analyze.outputs.has_changes }}
+

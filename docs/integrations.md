@@ -1,268 +1,220 @@
 # Integrations Guide
 
-This guide covers how to integrate Mushu with various issue trackers and automation platforms.
+Mushu uses a composable architecture. The core action analyzes your code, and integration actions post results to your tools.
+
+## Flow
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│    Trigger   │────►│   Analyze    │────►│  Integrate   │
+│  (webhook)   │     │   (mushu)    │     │  (jira/etc)  │
+└──────────────┘     └──────────────┘     └──────────────┘
+```
+
+---
 
 ## Jira Integration
 
 ### Setup
 
-1. **Create a Jira API Token**
+1. **Create Jira API Token**
    - Go to https://id.atlassian.com/manage-profile/security/api-tokens
-   - Create a new token for Mushu
+   - Create token for Mushu
 
 2. **Add GitHub Secrets**
    ```
    JIRA_BASE_URL: https://your-company.atlassian.net
    JIRA_EMAIL: your-email@company.com
-   JIRA_API_TOKEN: your-api-token
+   JIRA_API_TOKEN: your-token
    ```
 
-3. **Use the Jira workflow example**
-   Copy `examples/jira-integration.yml` to your repo
+### Action Reference
+
+```yaml
+- uses: liorkesten/mushu/integrations/jira@v1
+  with:
+    # Required
+    jira_base_url: ${{ secrets.JIRA_BASE_URL }}
+    jira_email: ${{ secrets.JIRA_EMAIL }}
+    jira_api_token: ${{ secrets.JIRA_API_TOKEN }}
+    ticket_key: PROJ-123
+    analysis: ${{ steps.mushu.outputs.analysis }}
+    analysis_mode: bug
+    
+    # Optional (for fix mode)
+    pr_url: ${{ steps.mushu.outputs.pr_url }}
+    has_changes: ${{ steps.mushu.outputs.has_changes }}
+```
+
+### Label Updates
+
+The Jira action automatically updates labels:
+
+| Mode | Label Added | Label Removed |
+|------|-------------|---------------|
+| bug | `mushu-analyzed` | - |
+| explore | `mushu-done` | `mushu` |
+| fix (with changes) | `mushu-pr-created` | `mushu-fix` |
+| fix (no changes) | `mushu-no-changes` | `mushu-fix` |
 
 ### Triggering from Jira
 
-Use Jira Automation or a tool like Workato/Zapier:
+Use Jira Automation or Workato/Zapier:
 
-#### Auto-analyze Bugs
-
-```
+```javascript
+// Jira Automation Rule
 Trigger: Issue created
 Condition: Issue type = Bug
+
 Action: Send web request
-  URL: https://api.github.com/repos/{owner}/{repo}/dispatches
+  URL: https://api.github.com/repos/OWNER/REPO/dispatches
   Method: POST
   Headers:
-    Authorization: token {GITHUB_PAT}
+    Authorization: token ${GITHUB_PAT}
     Accept: application/vnd.github.v3+json
-  Body:
-    {
-      "event_type": "mushu-bug",
-      "client_payload": {
-        "key": "{{issue.key}}",
-        "summary": "{{issue.summary}}",
-        "description": "{{issue.description}}"
-      }
+  Body: {
+    "event_type": "mushu-bug",
+    "client_payload": {
+      "key": "{{issue.key}}",
+      "summary": "{{issue.summary}}",
+      "description": "{{issue.description}}"
     }
+  }
 ```
-
-#### Explore on Label
-
-```
-Trigger: Issue updated
-Condition: Labels contain "mushu"
-Action: Send web request with event_type: "mushu-explore"
-```
-
-#### Fix with PR on Label
-
-```
-Trigger: Issue updated  
-Condition: Labels contain "mushu-fix"
-Action: Send web request with event_type: "mushu-fix"
-```
-
-### Jira Label Flow
-
-| Action | Before | After |
-|--------|--------|-------|
-| Bug analyzed | - | `mushu-analyzed` |
-| Explore complete | `mushu` | `mushu-done` |
-| Fix with PR | `mushu-fix` | `mushu-pr-created` |
-| Fix no changes | `mushu-fix` | `mushu-no-changes` |
 
 ---
 
 ## GitHub Issues Integration
 
-Mushu can analyze GitHub Issues natively.
-
-### Setup
-
-1. Copy `examples/github-issues.yml` to `.github/workflows/`
-2. Ensure `ANTHROPIC_API_KEY` secret is set
-
-### Triggers
-
-- **Bug issues**: Auto-analyzed when created with `bug` label
-- **Explore**: Add `mushu` label to any issue
-- **Fix with PR**: Add `mushu-fix` label
-
----
-
-## Linear Integration
-
-### Setup
-
-1. **Create a Linear API Key**
-   - Settings → API → Personal API keys
-
-2. **Add GitHub Secrets**
-   ```
-   LINEAR_API_KEY: your-api-key
-   ```
-
-3. **Create a Linear Webhook**
-   Point to a middleware (AWS Lambda, Cloudflare Worker) that:
-   - Receives Linear webhook events
-   - Triggers GitHub repository dispatch
-
-### Webhook Middleware Example
-
-```javascript
-// Cloudflare Worker example
-export default {
-  async fetch(request, env) {
-    const event = await request.json();
-    
-    // Map Linear event to Mushu mode
-    const mode = event.data.labels?.includes('bug') 
-      ? 'bug' 
-      : event.data.labels?.includes('mushu-fix')
-        ? 'fix'
-        : 'explore';
-    
-    await fetch(
-      `https://api.github.com/repos/${env.REPO}/dispatches`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `token ${env.GITHUB_TOKEN}`,
-          'Accept': 'application/vnd.github.v3+json',
-        },
-        body: JSON.stringify({
-          event_type: `mushu-${mode}`,
-          client_payload: {
-            key: event.data.identifier,
-            summary: event.data.title,
-            description: event.data.description,
-          },
-        }),
-      }
-    );
-    
-    return new Response('OK');
-  },
-};
-```
-
----
-
-## Slack Notifications
-
-Add Slack notifications to your workflow:
+### Action Reference
 
 ```yaml
-- name: Notify Slack
-  if: always()
-  uses: slackapi/slack-github-action@v1
+- uses: liorkesten/mushu/integrations/github-issues@v1
   with:
-    payload: |
-      {
-        "text": "🐉 Mushu analyzed ${{ steps.inputs.outputs.key }}",
-        "blocks": [
-          {
-            "type": "section",
-            "text": {
-              "type": "mrkdwn",
-              "text": "*${{ steps.inputs.outputs.key }}*: ${{ steps.inputs.outputs.summary }}\n\nMode: `${{ steps.inputs.outputs.mode }}`"
-            }
-          }
-        ]
-      }
-  env:
-    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+    # Required
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    issue_number: ${{ github.event.issue.number }}
+    analysis: ${{ steps.mushu.outputs.analysis }}
+    analysis_mode: bug
+    
+    # Optional
+    pr_url: ${{ steps.mushu.outputs.pr_url }}
+    has_changes: ${{ steps.mushu.outputs.has_changes }}
+    add_labels: "mushu-analyzed"
+    remove_labels: "mushu,needs-triage"
+```
+
+### Auto-trigger on Bug Issues
+
+```yaml
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  analyze:
+    if: |
+      (github.event.action == 'opened' && contains(github.event.issue.labels.*.name, 'bug')) ||
+      (github.event.action == 'labeled' && github.event.label.name == 'mushu')
 ```
 
 ---
 
-## Workato Recipe Templates
+## Slack Integration
 
-### Recipe 1: Auto-analyze Bugs
+### Setup
 
+1. Create Slack Incoming Webhook
+2. Add `SLACK_WEBHOOK_URL` secret
+
+### Action Reference
+
+```yaml
+- uses: liorkesten/mushu/integrations/slack@v1
+  with:
+    # Required
+    slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+    ticket_key: PROJ-123
+    ticket_summary: "Bug title"
+    analysis_mode: bug
+    
+    # Optional
+    ticket_url: https://jira.company.com/browse/PROJ-123
+    pr_url: ${{ steps.mushu.outputs.pr_url }}
+    has_changes: ${{ steps.mushu.outputs.has_changes }}
+    analysis_preview: ${{ steps.mushu.outputs.analysis }}
 ```
-Trigger: Jira - New issue
-  Project: Your Project
-  Issue type: Bug
-
-Condition: Labels does not contain "mushu-analyzed"
-
-Action: HTTP - POST request
-  URL: https://api.github.com/repos/OWNER/REPO/dispatches
-  Headers:
-    Authorization: token [GITHUB_PAT]
-    Accept: application/vnd.github.v3+json
-  Body:
-    {
-      "event_type": "mushu-bug",
-      "client_payload": {
-        "key": "[Issue key]",
-        "summary": "[Issue summary]",
-        "description": "[Issue description]"
-      }
-    }
-```
-
-### Recipe 2: Explore on Label
-
-```
-Trigger: Jira - Updated issue
-  
-Condition: 
-  - Labels contains "mushu"
-  - Labels does not contain "mushu-done"
-
-Action: HTTP - POST request
-  Body: { "event_type": "mushu-explore", ... }
-```
-
-### Recipe 3: Fix with PR
-
-```
-Trigger: Jira - Updated issue
-
-Condition:
-  - Labels contains "mushu-fix"
-  - Labels does not contain "mushu-pr-created"
-
-Action: HTTP - POST request
-  Body: { "event_type": "mushu-fix", ... }
-```
-
----
-
-## Zapier Integration
-
-Similar to Workato, create Zaps:
-
-1. **Trigger**: New Jira Issue (Bug type)
-2. **Filter**: Labels don't contain "mushu-analyzed"
-3. **Action**: Webhooks by Zapier → POST
-   - URL: GitHub dispatch endpoint
-   - Payload: Same as above
 
 ---
 
 ## Custom Webhooks
 
-For any system that can send webhooks:
+Trigger Mushu from any system:
 
 ```bash
 curl -X POST \
-  -H "Authorization: token YOUR_GITHUB_PAT" \
+  -H "Authorization: token $GITHUB_PAT" \
   -H "Accept: application/vnd.github.v3+json" \
   -d '{
     "event_type": "mushu-bug",
     "client_payload": {
       "key": "TICKET-123",
-      "summary": "Bug title here",
+      "summary": "Issue title",
       "description": "Full description..."
     }
   }' \
   "https://api.github.com/repos/OWNER/REPO/dispatches"
 ```
 
-Required permissions for the GitHub PAT:
-- `repo` (for private repos)
-- `public_repo` (for public repos)
+---
 
+## Building Custom Integrations
+
+Use Mushu outputs to build your own:
+
+```yaml
+- id: mushu
+  uses: liorkesten/mushu@v1
+  with:
+    # ... inputs
+
+- name: Custom integration
+  run: |
+    # Access outputs
+    ANALYSIS="${{ steps.mushu.outputs.analysis }}"
+    PR_URL="${{ steps.mushu.outputs.pr_url }}"
+    HAS_CHANGES="${{ steps.mushu.outputs.has_changes }}"
+    
+    # Post to your system
+    curl -X POST https://your-api.com/webhook \
+      -d "analysis=$ANALYSIS"
+```
+
+---
+
+## Parallel Integrations
+
+Run integrations in parallel for faster workflows:
+
+```yaml
+jobs:
+  analyze:
+    outputs:
+      analysis: ${{ steps.mushu.outputs.analysis }}
+    steps:
+      - uses: liorkesten/mushu@v1
+        id: mushu
+        # ...
+
+  jira:
+    needs: analyze
+    steps:
+      - uses: liorkesten/mushu/integrations/jira@v1
+        # ...
+
+  slack:
+    needs: analyze
+    steps:
+      - uses: liorkesten/mushu/integrations/slack@v1
+        # ...
+```

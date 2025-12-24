@@ -1,0 +1,158 @@
+name: "Mushu - Jira Integration"
+description: "🎫 Post Mushu analysis results to Jira tickets"
+author: "Zafran"
+branding:
+  icon: "message-square"
+  color: "blue"
+
+inputs:
+  jira_base_url:
+    description: "Jira base URL (e.g., https://company.atlassian.net)"
+    required: true
+  jira_email:
+    description: "Jira account email"
+    required: true
+  jira_api_token:
+    description: "Jira API token"
+    required: true
+  ticket_key:
+    description: "Jira ticket key (e.g., PROJ-123)"
+    required: true
+  analysis:
+    description: "Analysis text to post as comment"
+    required: true
+  analysis_mode:
+    description: "Analysis mode that was used: bug, explore, or fix"
+    required: true
+  pr_url:
+    description: "URL of created PR (optional, for fix mode)"
+    required: false
+    default: ""
+  has_changes:
+    description: "Whether code changes were made (optional, for fix mode)"
+    required: false
+    default: ""
+
+outputs:
+  comment_id:
+    description: "ID of the created Jira comment"
+    value: ${{ steps.post.outputs.comment_id }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Post comment to Jira
+      id: post
+      shell: bash
+      env:
+        JIRA_BASE_URL: ${{ inputs.jira_base_url }}
+        JIRA_EMAIL: ${{ inputs.jira_email }}
+        JIRA_API_TOKEN: ${{ inputs.jira_api_token }}
+        TICKET_KEY: ${{ inputs.ticket_key }}
+        ANALYSIS: ${{ inputs.analysis }}
+        ANALYSIS_MODE: ${{ inputs.analysis_mode }}
+        PR_URL: ${{ inputs.pr_url }}
+        HAS_CHANGES: ${{ inputs.has_changes }}
+      run: |
+        set -e
+        
+        # Escape analysis for JSON
+        ESCAPED_ANALYSIS=$(echo "$ANALYSIS" | jq -Rs .)
+        
+        # Build mode indicator
+        case "$ANALYSIS_MODE" in
+          bug) MODE_LABEL="🐛 Bug Analysis" ;;
+          explore) MODE_LABEL="🔍 Exploration" ;;
+          fix) MODE_LABEL="🔧 Fix Analysis" ;;
+          *) MODE_LABEL="Analysis" ;;
+        esac
+        
+        # Build extra content for fix mode
+        EXTRA_CONTENT=""
+        if [[ "$ANALYSIS_MODE" == "fix" ]]; then
+          if [[ "$HAS_CHANGES" == "true" && -n "$PR_URL" ]]; then
+            EXTRA_CONTENT=',{"type":"heading","attrs":{"level":4},"content":[{"type":"text","text":"🔗 Pull Request"}]},{"type":"paragraph","content":[{"type":"text","text":"'"$PR_URL"'","marks":[{"type":"link","attrs":{"href":"'"$PR_URL"'"}}]}]}'
+          elif [[ "$HAS_CHANGES" == "false" ]]; then
+            EXTRA_CONTENT=',{"type":"paragraph","content":[{"type":"text","text":"ℹ️ No code changes were needed."}]}'
+          fi
+        fi
+        
+        # Build comment body
+        COMMENT_BODY='{
+          "body": {
+            "type": "doc",
+            "version": 1,
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {"level": 3},
+                "content": [{"type": "text", "text": "🐉 Mushu: '"$MODE_LABEL"'"}]
+              },
+              {
+                "type": "codeBlock",
+                "attrs": {"language": "markdown"},
+                "content": [{"type": "text", "text": '"$ESCAPED_ANALYSIS"'}]
+              }'"$EXTRA_CONTENT"'
+            ]
+          }
+        }'
+        
+        # Post comment
+        RESPONSE=$(curl -s -w "\n%{http_code}" \
+          -X POST \
+          -H "Content-Type: application/json" \
+          -u "${JIRA_EMAIL}:${JIRA_API_TOKEN}" \
+          --data "$COMMENT_BODY" \
+          "${JIRA_BASE_URL}/rest/api/3/issue/${TICKET_KEY}/comment")
+        
+        HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+        BODY=$(echo "$RESPONSE" | sed '$d')
+        
+        if [[ "$HTTP_CODE" -lt 200 || "$HTTP_CODE" -ge 300 ]]; then
+          echo "::error::Failed to post Jira comment (HTTP $HTTP_CODE)"
+          echo "$BODY"
+          exit 1
+        fi
+        
+        COMMENT_ID=$(echo "$BODY" | jq -r '.id // empty')
+        echo "comment_id=$COMMENT_ID" >> $GITHUB_OUTPUT
+        echo "✓ Comment posted to $TICKET_KEY"
+
+    - name: Update labels
+      shell: bash
+      env:
+        JIRA_BASE_URL: ${{ inputs.jira_base_url }}
+        JIRA_EMAIL: ${{ inputs.jira_email }}
+        JIRA_API_TOKEN: ${{ inputs.jira_api_token }}
+        TICKET_KEY: ${{ inputs.ticket_key }}
+        ANALYSIS_MODE: ${{ inputs.analysis_mode }}
+        HAS_CHANGES: ${{ inputs.has_changes }}
+      run: |
+        # Determine label update
+        case "$ANALYSIS_MODE" in
+          bug)
+            LABEL_UPDATE='{"update":{"labels":[{"add":"mushu-analyzed"}]}}'
+            ;;
+          explore)
+            LABEL_UPDATE='{"update":{"labels":[{"remove":"mushu"},{"add":"mushu-done"}]}}'
+            ;;
+          fix)
+            if [[ "$HAS_CHANGES" == "true" ]]; then
+              LABEL_UPDATE='{"update":{"labels":[{"remove":"mushu-fix"},{"add":"mushu-pr-created"}]}}'
+            else
+              LABEL_UPDATE='{"update":{"labels":[{"remove":"mushu-fix"},{"add":"mushu-no-changes"}]}}'
+            fi
+            ;;
+          *)
+            exit 0
+            ;;
+        esac
+        
+        curl -s -X PUT \
+          -H "Content-Type: application/json" \
+          -u "${JIRA_EMAIL}:${JIRA_API_TOKEN}" \
+          --data "$LABEL_UPDATE" \
+          "${JIRA_BASE_URL}/rest/api/3/issue/${TICKET_KEY}" > /dev/null || true
+        
+        echo "✓ Labels updated"
+

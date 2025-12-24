@@ -1,0 +1,151 @@
+name: "Mushu - Slack Integration"
+description: "💬 Send Mushu analysis notifications to Slack"
+author: "Zafran"
+branding:
+  icon: "message-square"
+  color: "green"
+
+inputs:
+  slack_webhook_url:
+    description: "Slack incoming webhook URL"
+    required: true
+  ticket_key:
+    description: "Ticket key that was analyzed"
+    required: true
+  ticket_summary:
+    description: "Ticket summary"
+    required: true
+  analysis_mode:
+    description: "Analysis mode: bug, explore, or fix"
+    required: true
+  ticket_url:
+    description: "URL to the ticket (optional)"
+    required: false
+    default: ""
+  pr_url:
+    description: "URL of created PR (optional, for fix mode)"
+    required: false
+    default: ""
+  has_changes:
+    description: "Whether code changes were made (optional, for fix mode)"
+    required: false
+    default: ""
+  analysis_preview:
+    description: "Preview of analysis (first ~500 chars, optional)"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Send Slack notification
+      shell: bash
+      env:
+        SLACK_WEBHOOK_URL: ${{ inputs.slack_webhook_url }}
+        TICKET_KEY: ${{ inputs.ticket_key }}
+        TICKET_SUMMARY: ${{ inputs.ticket_summary }}
+        TICKET_URL: ${{ inputs.ticket_url }}
+        ANALYSIS_MODE: ${{ inputs.analysis_mode }}
+        PR_URL: ${{ inputs.pr_url }}
+        HAS_CHANGES: ${{ inputs.has_changes }}
+        ANALYSIS_PREVIEW: ${{ inputs.analysis_preview }}
+      run: |
+        set -e
+        
+        # Build mode emoji and text
+        case "$ANALYSIS_MODE" in
+          bug) 
+            MODE_EMOJI="🐛"
+            MODE_TEXT="Bug Analysis"
+            COLOR="#FF6B6B"
+            ;;
+          explore)
+            MODE_EMOJI="🔍"
+            MODE_TEXT="Exploration"
+            COLOR="#4ECDC4"
+            ;;
+          fix)
+            MODE_EMOJI="🔧"
+            MODE_TEXT="Fix Analysis"
+            COLOR="#45B7D1"
+            ;;
+          *)
+            MODE_EMOJI="📋"
+            MODE_TEXT="Analysis"
+            COLOR="#95A5A6"
+            ;;
+        esac
+        
+        # Build ticket link
+        if [[ -n "$TICKET_URL" ]]; then
+          TICKET_LINK="<$TICKET_URL|$TICKET_KEY>"
+        else
+          TICKET_LINK="$TICKET_KEY"
+        fi
+        
+        # Build fields
+        FIELDS='[{"type":"mrkdwn","text":"*Ticket:*\n'"$TICKET_LINK"'"},{"type":"mrkdwn","text":"*Mode:*\n'"$MODE_EMOJI $MODE_TEXT"'"}]'
+        
+        # Add PR field if available
+        if [[ "$ANALYSIS_MODE" == "fix" && "$HAS_CHANGES" == "true" && -n "$PR_URL" ]]; then
+          FIELDS='[{"type":"mrkdwn","text":"*Ticket:*\n'"$TICKET_LINK"'"},{"type":"mrkdwn","text":"*Mode:*\n'"$MODE_EMOJI $MODE_TEXT"'"},{"type":"mrkdwn","text":"*PR:*\n<'"$PR_URL"'|View PR>"}]'
+        fi
+        
+        # Build payload
+        PAYLOAD='{
+          "blocks": [
+            {
+              "type": "header",
+              "text": {
+                "type": "plain_text",
+                "text": "🐉 Mushu Analysis Complete",
+                "emoji": true
+              }
+            },
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*'"$TICKET_SUMMARY"'*"
+              }
+            },
+            {
+              "type": "section",
+              "fields": '"$FIELDS"'
+            }'
+        
+        # Add preview if provided
+        if [[ -n "$ANALYSIS_PREVIEW" ]]; then
+          # Escape for JSON
+          ESCAPED_PREVIEW=$(echo "$ANALYSIS_PREVIEW" | head -c 500 | jq -Rs .)
+          PAYLOAD+=',{
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "_Preview:_\n```'"$(echo "$ANALYSIS_PREVIEW" | head -c 300)"'...```"
+              }
+            }'
+        fi
+        
+        PAYLOAD+='
+          ],
+          "attachments": [
+            {
+              "color": "'"$COLOR"'"
+            }
+          ]
+        }'
+        
+        # Send to Slack
+        HTTP_CODE=$(curl -s -w "%{http_code}" -o /dev/null \
+          -X POST \
+          -H "Content-Type: application/json" \
+          --data "$PAYLOAD" \
+          "$SLACK_WEBHOOK_URL")
+        
+        if [[ "$HTTP_CODE" != "200" ]]; then
+          echo "::warning::Failed to send Slack notification (HTTP $HTTP_CODE)"
+        else
+          echo "✓ Slack notification sent"
+        fi
+

@@ -1,8 +1,8 @@
 # Example: Mushu with GitHub Issues
-# Auto-analyze bugs and feature requests from GitHub Issues
+# Auto-analyze issues and post results back as comments
 
-name: Mushu - GitHub Issues
-run-name: "🐉 Mushu: #${{ github.event.issue.number }}"
+name: Mushu + GitHub Issues
+run-name: "🐉 #${{ github.event.issue.number }}"
 
 on:
   issues:
@@ -22,39 +22,52 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     
-    # Run on bug issues or when 'mushu' label is added
+    # Trigger conditions:
+    # - New bug issue
+    # - 'mushu' label added (explore mode)
+    # - 'mushu-fix' label added (fix mode)
     if: |
       (github.event.action == 'opened' && contains(github.event.issue.labels.*.name, 'bug')) ||
       (github.event.action == 'labeled' && github.event.label.name == 'mushu') ||
       (github.event.action == 'labeled' && github.event.label.name == 'mushu-fix')
     
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Determine mode
         id: mode
         run: |
           if [[ "${{ contains(github.event.issue.labels.*.name, 'mushu-fix') }}" == "true" ]]; then
-            echo "mode=fix" >> $GITHUB_OUTPUT
+            echo "value=fix" >> $GITHUB_OUTPUT
           elif [[ "${{ contains(github.event.issue.labels.*.name, 'bug') }}" == "true" ]]; then
-            echo "mode=bug" >> $GITHUB_OUTPUT
+            echo "value=bug" >> $GITHUB_OUTPUT
           else
-            echo "mode=explore" >> $GITHUB_OUTPUT
+            echo "value=explore" >> $GITHUB_OUTPUT
           fi
 
-      - name: Run Mushu
+      # Step 1: Run analysis
+      - name: Analyze
+        id: mushu
         uses: liorkesten/mushu@v1
         with:
           ticket_key: ${{ github.event.issue.number }}
           ticket_summary: ${{ github.event.issue.title }}
           ticket_description: ${{ github.event.issue.body }}
-          analysis_mode: ${{ steps.mode.outputs.mode }}
+          analysis_mode: ${{ steps.mode.outputs.value }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          issue_tracker: github
-          issue_tracker_base_url: ${{ github.server_url }}/${{ github.repository }}
 
+      # Step 2: Post to GitHub Issue
+      - name: Post to Issue
+        uses: liorkesten/mushu/integrations/github-issues@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          issue_number: ${{ github.event.issue.number }}
+          analysis: ${{ steps.mushu.outputs.analysis }}
+          analysis_mode: ${{ steps.mode.outputs.value }}
+          pr_url: ${{ steps.mushu.outputs.pr_url }}
+          has_changes: ${{ steps.mushu.outputs.has_changes }}
+          add_labels: mushu-analyzed
+          remove_labels: mushu,mushu-fix

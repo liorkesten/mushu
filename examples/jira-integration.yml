@@ -1,15 +1,12 @@
 # Example: Mushu with Jira Integration
-# This workflow integrates with Jira to post analysis results back to tickets
+# Uses composable actions: analyze + post to Jira
 
-name: Mushu - Jira Integration
-run-name: "🐉 Mushu: ${{ github.event.client_payload.key }} (${{ github.event.action }})"
+name: Mushu + Jira
+run-name: "🐉 ${{ github.event.client_payload.key }}"
 
 on:
   repository_dispatch:
-    types:
-      - mushu-bug
-      - mushu-explore
-      - mushu-fix
+    types: [mushu-bug, mushu-explore, mushu-fix]
 
 permissions:
   contents: write
@@ -23,48 +20,49 @@ jobs:
   analyze:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    
     steps:
       - name: Validate secrets
         run: |
-          missing=""
-          [[ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]] && missing="$missing ANTHROPIC_API_KEY"
-          [[ -z "${{ secrets.JIRA_BASE_URL }}" ]] && missing="$missing JIRA_BASE_URL"
-          [[ -z "${{ secrets.JIRA_EMAIL }}" ]] && missing="$missing JIRA_EMAIL"
-          [[ -z "${{ secrets.JIRA_API_TOKEN }}" ]] && missing="$missing JIRA_API_TOKEN"
-          
-          if [[ -n "$missing" ]]; then
-            echo "::error::Missing secrets:$missing"
-            exit 1
-          fi
+          [[ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]] && echo "::error::Missing ANTHROPIC_API_KEY" && exit 1
+          [[ -z "${{ secrets.JIRA_BASE_URL }}" ]] && echo "::error::Missing JIRA_BASE_URL" && exit 1
+          [[ -z "${{ secrets.JIRA_EMAIL }}" ]] && echo "::error::Missing JIRA_EMAIL" && exit 1
+          [[ -z "${{ secrets.JIRA_API_TOKEN }}" ]] && echo "::error::Missing JIRA_API_TOKEN" && exit 1
+          echo "✓ All secrets configured"
 
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Resolve mode
-        id: inputs
+        id: mode
         run: |
           case "${{ github.event.action }}" in
-            mushu-bug) echo "mode=bug" >> $GITHUB_OUTPUT ;;
-            mushu-explore) echo "mode=explore" >> $GITHUB_OUTPUT ;;
-            mushu-fix) echo "mode=fix" >> $GITHUB_OUTPUT ;;
+            mushu-bug) echo "value=bug" >> $GITHUB_OUTPUT ;;
+            mushu-explore) echo "value=explore" >> $GITHUB_OUTPUT ;;
+            mushu-fix) echo "value=fix" >> $GITHUB_OUTPUT ;;
           esac
 
-      - name: Run Mushu
+      # Step 1: Run analysis
+      - name: Analyze
+        id: mushu
         uses: liorkesten/mushu@v1
         with:
           ticket_key: ${{ github.event.client_payload.key }}
           ticket_summary: ${{ github.event.client_payload.summary }}
           ticket_description: ${{ github.event.client_payload.description }}
-          analysis_mode: ${{ steps.inputs.outputs.mode }}
+          analysis_mode: ${{ steps.mode.outputs.value }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          # Jira integration
-          issue_tracker: jira
-          issue_tracker_base_url: ${{ secrets.JIRA_BASE_URL }}
-          issue_tracker_email: ${{ secrets.JIRA_EMAIL }}
-          issue_tracker_api_token: ${{ secrets.JIRA_API_TOKEN }}
 
+      # Step 2: Post to Jira
+      - name: Post to Jira
+        uses: liorkesten/mushu/integrations/jira@v1
+        with:
+          jira_base_url: ${{ secrets.JIRA_BASE_URL }}
+          jira_email: ${{ secrets.JIRA_EMAIL }}
+          jira_api_token: ${{ secrets.JIRA_API_TOKEN }}
+          ticket_key: ${{ github.event.client_payload.key }}
+          analysis: ${{ steps.mushu.outputs.analysis }}
+          analysis_mode: ${{ steps.mode.outputs.value }}
+          pr_url: ${{ steps.mushu.outputs.pr_url }}
+          has_changes: ${{ steps.mushu.outputs.has_changes }}

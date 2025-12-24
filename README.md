@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/liorkesten/mushu/main/assets/mushu-logo.svg" alt="Mushu Logo" width="200"/>
+  <img src="https://raw.githubusercontent.com/liorkesten/mushu/main/assets/mushu-logo.svg" alt="Mushu Logo" width="180"/>
 </p>
 
 <h1 align="center">🐉 Mushu</h1>
@@ -9,44 +9,168 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/liorkesten/mushu/actions"><img src="https://img.shields.io/github/actions/workflow/status/liorkesten/mushu/test.yml?branch=main&style=flat-square&logo=github" alt="Build Status"></a>
-  <a href="https://github.com/liorkesten/mushu/releases"><img src="https://img.shields.io/github/v/release/liorkesten/mushu?style=flat-square&logo=github" alt="Release"></a>
+  <a href="https://github.com/liorkesten/mushu/releases"><img src="https://img.shields.io/github/v/release/liorkesten/mushu?style=flat-square" alt="Release"></a>
   <a href="https://github.com/liorkesten/mushu/blob/main/LICENSE"><img src="https://img.shields.io/github/license/liorkesten/mushu?style=flat-square" alt="License"></a>
-  <a href="https://github.com/liorkesten/mushu/stargazers"><img src="https://img.shields.io/github/stars/liorkesten/mushu?style=flat-square&logo=github" alt="Stars"></a>
+  <a href="https://github.com/liorkesten/mushu/stargazers"><img src="https://img.shields.io/github/stars/liorkesten/mushu?style=flat-square" alt="Stars"></a>
 </p>
 
 <p align="center">
   <a href="#-quick-start">Quick Start</a> •
-  <a href="#-features">Features</a> •
+  <a href="#-architecture">Architecture</a> •
   <a href="#-analysis-modes">Modes</a> •
   <a href="#-integrations">Integrations</a> •
-  <a href="#-configuration">Configuration</a>
+  <a href="#-examples">Examples</a>
 </p>
 
 ---
 
 ## What is Mushu?
 
-Mushu is a GitHub Action that uses Claude AI to analyze your issue tickets, explore your codebase, and even create pull requests with fixes. It bridges the gap between your issue tracker and your code.
+Mushu is a composable GitHub Action that uses Claude AI to analyze issue tickets, explore codebases, and create pull requests with fixes.
 
 ```
-📋 Jira/GitHub Issue → 🐉 Mushu → 🔍 Analysis + 🔧 Optional PR
+📋 Ticket → 🐉 Mushu (analyze) → 📝 Results → 🔌 Integrations (Jira/Slack/GitHub)
 ```
-
-### Why Mushu?
-
-- **Save time** on initial bug investigation
-- **Get context** before starting work on new features  
-- **Automate simple fixes** with AI-generated PRs
-- **Document findings** back to your issue tracker
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Add the workflow
+```yaml
+- uses: liorkesten/mushu@v1
+  with:
+    ticket_key: "PROJ-123"
+    ticket_summary: "Login button not working"
+    analysis_mode: bug
+    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+```
 
-Create `.github/workflows/mushu.yml`:
+That's it! Mushu will analyze your codebase and output the results.
+
+---
+
+## 🏗️ Architecture
+
+Mushu follows a **composable architecture** - small, focused actions that work together:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Your Workflow                             │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   ┌─────────────────┐                                       │
+│   │  liorkesten/    │──► analysis                           │
+│   │  mushu@v1       │──► pr_url (fix mode)                  │
+│   │  (Core)         │──► has_changes                        │
+│   └────────┬────────┘                                       │
+│            │                                                 │
+│            ▼                                                 │
+│   ┌────────┴────────┬──────────────┬──────────────┐        │
+│   │                 │              │              │        │
+│   ▼                 ▼              ▼              ▼        │
+│ ┌─────────┐   ┌──────────┐   ┌─────────┐   ┌─────────┐   │
+│ │  Jira   │   │  GitHub  │   │  Slack  │   │  Your   │   │
+│ │ Action  │   │  Issues  │   │ Action  │   │ Custom  │   │
+│ └─────────┘   └──────────┘   └─────────┘   └─────────┘   │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Available Actions
+
+| Action | Purpose |
+|--------|---------|
+| `liorkesten/mushu@v1` | Core analysis with Claude |
+| `liorkesten/mushu/integrations/jira@v1` | Post results to Jira |
+| `liorkesten/mushu/integrations/github-issues@v1` | Post results to GitHub Issues |
+| `liorkesten/mushu/integrations/slack@v1` | Send Slack notifications |
+
+---
+
+## 📊 Analysis Modes
+
+### 🐛 Bug Mode
+Investigates bugs and suggests fixes.
+
+```yaml
+analysis_mode: bug
+```
+
+### 🔍 Explore Mode
+Maps the codebase for new features.
+
+```yaml
+analysis_mode: explore
+```
+
+### 🔧 Fix Mode
+Analyzes AND creates a PR with the fix.
+
+```yaml
+analysis_mode: fix
+github_token: ${{ secrets.GITHUB_TOKEN }}  # Required for fix mode
+```
+
+---
+
+## 🔌 Integrations
+
+### Jira
+
+```yaml
+# Step 1: Analyze
+- name: Analyze
+  id: mushu
+  uses: liorkesten/mushu@v1
+  with:
+    ticket_key: PROJ-123
+    ticket_summary: "Bug title"
+    analysis_mode: bug
+    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+# Step 2: Post to Jira
+- name: Post to Jira
+  uses: liorkesten/mushu/integrations/jira@v1
+  with:
+    jira_base_url: ${{ secrets.JIRA_BASE_URL }}
+    jira_email: ${{ secrets.JIRA_EMAIL }}
+    jira_api_token: ${{ secrets.JIRA_API_TOKEN }}
+    ticket_key: PROJ-123
+    analysis: ${{ steps.mushu.outputs.analysis }}
+    analysis_mode: bug
+```
+
+### GitHub Issues
+
+```yaml
+- name: Post to Issue
+  uses: liorkesten/mushu/integrations/github-issues@v1
+  with:
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    issue_number: ${{ github.event.issue.number }}
+    analysis: ${{ steps.mushu.outputs.analysis }}
+    analysis_mode: bug
+    add_labels: mushu-analyzed
+```
+
+### Slack
+
+```yaml
+- name: Notify Slack
+  uses: liorkesten/mushu/integrations/slack@v1
+  with:
+    slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+    ticket_key: PROJ-123
+    ticket_summary: "Bug title"
+    analysis_mode: bug
+    pr_url: ${{ steps.mushu.outputs.pr_url }}
+```
+
+---
+
+## 📋 Examples
+
+### Basic: Manual Trigger
 
 ```yaml
 name: Mushu
@@ -54,28 +178,18 @@ on:
   workflow_dispatch:
     inputs:
       ticket_key:
-        description: "Ticket key"
         required: true
       ticket_summary:
-        description: "Summary"
         required: true
       analysis_mode:
-        description: "Mode"
         type: choice
         options: [bug, explore, fix]
-
-permissions:
-  contents: write
-  pull-requests: write
 
 jobs:
   analyze:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - uses: liorkesten/mushu@v1
         with:
           ticket_key: ${{ inputs.ticket_key }}
@@ -85,109 +199,55 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-### 2. Add your Anthropic API key
-
-Go to **Settings → Secrets → Actions** and add:
-- `ANTHROPIC_API_KEY`: Your Claude API key from [Anthropic Console](https://console.anthropic.com/)
-
-### 3. Run it!
-
-Go to **Actions → Mushu → Run workflow** and enter a ticket to analyze.
-
----
-
-## ✨ Features
-
-| Feature | Description |
-|---------|-------------|
-| 🔍 **Smart Analysis** | Uses Claude to understand bugs and explore code |
-| 🐛 **Bug Investigation** | Finds root causes with file:line references |
-| 🗺️ **Code Exploration** | Maps relevant code for new features |
-| 🔧 **Auto-Fix** | Creates PRs with minimal, focused changes |
-| 📝 **Issue Tracking** | Posts findings back to Jira/GitHub |
-| ⚡ **Fast** | Parallel tool calls for quick analysis |
-
----
-
-## 📊 Analysis Modes
-
-Mushu has three modes, each designed for different use cases:
-
-### 🐛 Bug Mode
-
-Investigates bug reports and suggests fixes.
+### Jira: Triggered by Webhook
 
 ```yaml
-analysis_mode: bug
+name: Mushu + Jira
+on:
+  repository_dispatch:
+    types: [mushu-bug, mushu-explore, mushu-fix]
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: mode
+        run: |
+          case "${{ github.event.action }}" in
+            mushu-bug) echo "value=bug" >> $GITHUB_OUTPUT ;;
+            mushu-explore) echo "value=explore" >> $GITHUB_OUTPUT ;;
+            mushu-fix) echo "value=fix" >> $GITHUB_OUTPUT ;;
+          esac
+
+      - id: mushu
+        uses: liorkesten/mushu@v1
+        with:
+          ticket_key: ${{ github.event.client_payload.key }}
+          ticket_summary: ${{ github.event.client_payload.summary }}
+          analysis_mode: ${{ steps.mode.outputs.value }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: liorkesten/mushu/integrations/jira@v1
+        with:
+          jira_base_url: ${{ secrets.JIRA_BASE_URL }}
+          jira_email: ${{ secrets.JIRA_EMAIL }}
+          jira_api_token: ${{ secrets.JIRA_API_TOKEN }}
+          ticket_key: ${{ github.event.client_payload.key }}
+          analysis: ${{ steps.mushu.outputs.analysis }}
+          analysis_mode: ${{ steps.mode.outputs.value }}
+          pr_url: ${{ steps.mushu.outputs.pr_url }}
+          has_changes: ${{ steps.mushu.outputs.has_changes }}
 ```
 
-**Output includes:**
-- Relevant files with line numbers
-- Root cause analysis
-- Suggested fix with code snippets
-- Impact assessment
-- Clarifying questions (if needed)
-
-### 🔍 Explore Mode
-
-Maps the codebase for new features or investigations.
+### GitHub Issues: Auto-analyze Bugs
 
 ```yaml
-analysis_mode: explore
-```
-
-**Output includes:**
-- Understanding of the request
-- Relevant code map
-- Existing patterns to follow
-- Implementation suggestions
-- Related features for reference
-
-### 🔧 Fix Mode
-
-Analyzes AND implements the fix, creating a PR.
-
-```yaml
-analysis_mode: fix
-```
-
-**Creates:**
-- Branch: `mushu/{ticket-key}`
-- Minimal, focused code changes
-- Draft PR with analysis summary
-- Testing notes and risk assessment
-
----
-
-## 🔌 Integrations
-
-### Jira
-
-Auto-analyze bugs and post findings back to Jira:
-
-```yaml
-- uses: liorkesten/mushu@v1
-  with:
-    issue_tracker: jira
-    issue_tracker_base_url: ${{ secrets.JIRA_BASE_URL }}
-    issue_tracker_email: ${{ secrets.JIRA_EMAIL }}
-    issue_tracker_api_token: ${{ secrets.JIRA_API_TOKEN }}
-```
-
-**Label flow:**
-| Action | Label Added |
-|--------|-------------|
-| Bug analyzed | `mushu-analyzed` |
-| Explore complete | `mushu-done` |
-| PR created | `mushu-pr-created` |
-
-See [Jira Integration Guide](docs/integrations.md#jira-integration) for automation setup.
-
-### GitHub Issues
-
-Analyze GitHub Issues directly:
-
-```yaml
+name: Mushu + Issues
 on:
   issues:
     types: [opened, labeled]
@@ -195,64 +255,58 @@ on:
 jobs:
   analyze:
     if: contains(github.event.issue.labels.*.name, 'bug')
+    runs-on: ubuntu-latest
     steps:
-      - uses: liorkesten/mushu@v1
+      - uses: actions/checkout@v4
+      
+      - id: mushu
+        uses: liorkesten/mushu@v1
         with:
           ticket_key: ${{ github.event.issue.number }}
           ticket_summary: ${{ github.event.issue.title }}
-          issue_tracker: github
+          ticket_description: ${{ github.event.issue.body }}
+          analysis_mode: bug
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - uses: liorkesten/mushu/integrations/github-issues@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          issue_number: ${{ github.event.issue.number }}
+          analysis: ${{ steps.mushu.outputs.analysis }}
+          analysis_mode: bug
 ```
 
-### Linear, Notion, etc.
-
-Trigger via `repository_dispatch` from any webhook-capable system:
-
-```bash
-curl -X POST \
-  -H "Authorization: token $GITHUB_TOKEN" \
-  -d '{"event_type":"mushu-bug","client_payload":{"key":"LIN-123","summary":"Bug title"}}' \
-  "https://api.github.com/repos/OWNER/REPO/dispatches"
-```
+See [`examples/`](examples/) for more complete workflows.
 
 ---
 
 ## ⚙️ Configuration
 
-### Inputs
+### Core Action Inputs
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `ticket_key` | ✅ | - | Issue key (e.g., PROJ-123) |
-| `ticket_summary` | ✅ | - | Issue title/summary |
+| `ticket_key` | ✅ | - | Issue key |
+| `ticket_summary` | ✅ | - | Issue title |
 | `ticket_description` | ❌ | `""` | Issue description |
 | `analysis_mode` | ✅ | `bug` | `bug`, `explore`, or `fix` |
 | `anthropic_api_key` | ✅ | - | Claude API key |
-| `github_token` | ❌* | - | Required for `fix` mode |
+| `github_token` | ❌ | - | Required for `fix` mode |
 | `base_branch` | ❌ | `main` | Base branch for PRs |
-| `issue_tracker` | ❌ | `none` | `jira`, `github`, `linear`, or `none` |
-| `custom_prompt` | ❌ | `""` | Additional instructions |
+| `custom_instructions` | ❌ | `""` | Extra prompt instructions |
 | `timeout_minutes` | ❌ | `15` | Analysis timeout |
-| `pr_draft` | ❌ | `true` | Create PR as draft |
-| `pr_labels` | ❌ | `mushu,automated` | PR labels (comma-separated) |
+| `pr_draft` | ❌ | `true` | Create draft PRs |
+| `pr_labels` | ❌ | `mushu,automated` | PR labels |
 
-### Outputs
+### Core Action Outputs
 
 | Output | Description |
 |--------|-------------|
-| `analysis` | Full Claude analysis text |
-| `pr_url` | URL of created PR (fix mode) |
-| `pr_number` | Number of created PR (fix mode) |
-| `has_changes` | Whether code changes were made |
-| `branch_name` | Created branch name (fix mode) |
-
-### Secrets
-
-| Secret | Required | Description |
-|--------|----------|-------------|
-| `ANTHROPIC_API_KEY` | ✅ | Claude API key |
-| `JIRA_BASE_URL` | For Jira | e.g., `https://company.atlassian.net` |
-| `JIRA_EMAIL` | For Jira | Jira account email |
-| `JIRA_API_TOKEN` | For Jira | Jira API token |
+| `analysis` | Claude's analysis text |
+| `pr_url` | Created PR URL (fix mode) |
+| `pr_number` | Created PR number (fix mode) |
+| `has_changes` | Whether changes were made |
+| `branch_name` | Created branch name |
 
 ---
 
@@ -260,97 +314,48 @@ curl -X POST \
 
 ```
 mushu/
-├── action.yml              # Main action definition
+├── action.yml                      # Core action (~150 lines)
+├── integrations/
+│   ├── jira/action.yml            # Jira integration (~120 lines)
+│   ├── github-issues/action.yml   # GitHub Issues (~100 lines)
+│   └── slack/action.yml           # Slack notifications (~100 lines)
 ├── prompts/
-│   ├── bug.md              # Bug analysis prompt
-│   ├── explore.md          # Exploration prompt
-│   └── fix.md              # Fix implementation prompt
+│   ├── bug.md                      # Bug analysis prompt
+│   ├── explore.md                  # Exploration prompt
+│   └── fix.md                      # Fix implementation prompt
 ├── examples/
-│   ├── basic-workflow.yml  # Simple setup
+│   ├── basic-workflow.yml
 │   ├── jira-integration.yml
-│   └── github-issues.yml
+│   ├── github-issues.yml
+│   └── full-integration.yml
 └── docs/
-    ├── integrations.md     # Integration guides
-    └── customization.md    # Customization options
+    ├── integrations.md
+    └── customization.md
 ```
-
----
-
-## 🎨 Customization
-
-### Custom Prompts
-
-Add project-specific context:
-
-```yaml
-- uses: liorkesten/mushu@v1
-  with:
-    custom_prompt: |
-      Codebase context:
-      - Go 1.21 with generics
-      - gRPC + Protocol Buffers
-      - PostgreSQL with sqlc
-```
-
-### Forking for Full Control
-
-1. Fork this repository
-2. Modify prompts in `prompts/`
-3. Use your fork: `uses: YOUR_ORG/mushu@main`
-
-See [Customization Guide](docs/customization.md) for more options.
 
 ---
 
 ## 🔒 Security
 
-- Mushu only has access to code in the checked-out repository
-- In `bug` and `explore` modes, Mushu has **read-only** access
-- In `fix` mode, changes are committed to a **new branch**
-- All PRs are created as **drafts** by default
-- API keys are passed as secrets, never logged
-
-### Best Practices
-
-1. Always review AI-generated PRs before merging
-2. Use draft PRs (`pr_draft: true`)
-3. Add required reviewers to AI-generated PRs
-4. Limit `fix` mode to trusted ticket sources
+- API keys are secrets, never logged
+- `bug` and `explore` modes are **read-only**
+- `fix` mode writes to a **new branch** only
+- PRs are **drafts** by default
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-```bash
-# Clone the repo
-git clone https://github.com/liorkesten/mushu.git
-
-# Create a branch
-git checkout -b feature/amazing-feature
-
-# Make your changes and submit a PR
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
 ## 📜 License
 
-MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-## 💬 Support
-
-- 📖 [Documentation](docs/)
-- 🐛 [Report a Bug](https://github.com/liorkesten/mushu/issues/new?template=bug_report.md)
-- 💡 [Request a Feature](https://github.com/liorkesten/mushu/issues/new?template=feature_request.md)
-- 💬 [Discussions](https://github.com/liorkesten/mushu/discussions)
+MIT License - see [LICENSE](LICENSE).
 
 ---
 
 <p align="center">
   Made with 🐉 by <a href="https://zafran.io">Zafran</a>
 </p>
-

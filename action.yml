@@ -1,5 +1,5 @@
 name: "Mushu - AI Code Analyst"
-description: "🐉 AI-powered Jira ticket analyzer that explores codebases, suggests fixes, and creates PRs using Claude"
+description: "🐉 Analyze tickets and explore codebases using Claude AI"
 author: "Zafran"
 branding:
   icon: "search"
@@ -24,31 +24,15 @@ inputs:
     description: "Anthropic API key for Claude"
     required: true
   github_token:
-    description: "GitHub token for PR creation (required for fix mode)"
+    description: "GitHub token (required for fix mode)"
     required: false
     default: ""
   base_branch:
     description: "Base branch for PRs (default: main)"
     required: false
     default: "main"
-  issue_tracker:
-    description: "Issue tracker type: jira, github, linear, or none"
-    required: false
-    default: "none"
-  issue_tracker_base_url:
-    description: "Issue tracker base URL (e.g., https://company.atlassian.net)"
-    required: false
-    default: ""
-  issue_tracker_email:
-    description: "Issue tracker email/username (for Jira)"
-    required: false
-    default: ""
-  issue_tracker_api_token:
-    description: "Issue tracker API token"
-    required: false
-    default: ""
-  custom_prompt:
-    description: "Additional custom instructions to append to the prompt"
+  custom_instructions:
+    description: "Additional instructions to append to the prompt"
     required: false
     default: ""
   timeout_minutes:
@@ -69,10 +53,10 @@ outputs:
     description: "Claude analysis result"
     value: ${{ steps.claude.outputs.result }}
   pr_url:
-    description: "URL of created PR (if fix mode)"
+    description: "URL of created PR (fix mode only)"
     value: ${{ steps.create-pr.outputs.pull-request-url }}
   pr_number:
-    description: "Number of created PR (if fix mode)"
+    description: "Number of created PR (fix mode only)"
     value: ${{ steps.create-pr.outputs.pull-request-number }}
   has_changes:
     description: "Whether code changes were made (fix mode)"
@@ -85,204 +69,114 @@ runs:
   using: "composite"
   steps:
     - name: Validate inputs
-      id: validate
       shell: bash
       run: |
-        set -e
-        
         echo "🐉 Mushu - AI Code Analyst"
         echo "=========================="
         
-        # Validate ticket key format (alphanumeric with dash)
-        if [[ ! "${{ inputs.ticket_key }}" =~ ^[A-Za-z]+-[0-9]+$ ]] && [[ ! "${{ inputs.ticket_key }}" =~ ^[0-9]+$ ]]; then
-          echo "::error::Invalid ticket key format: ${{ inputs.ticket_key }}"
-          exit 1
-        fi
-        
-        # Validate analysis mode
         if [[ ! "${{ inputs.analysis_mode }}" =~ ^(bug|explore|fix)$ ]]; then
-          echo "::error::Invalid analysis mode: ${{ inputs.analysis_mode }}. Must be: bug, explore, or fix"
+          echo "::error::Invalid analysis mode: ${{ inputs.analysis_mode }}"
           exit 1
         fi
         
-        # Validate fix mode requirements
         if [[ "${{ inputs.analysis_mode }}" == "fix" && -z "${{ inputs.github_token }}" ]]; then
           echo "::error::github_token is required for fix mode"
           exit 1
         fi
         
-        # Validate issue tracker configuration
-        if [[ "${{ inputs.issue_tracker }}" != "none" ]]; then
-          if [[ -z "${{ inputs.issue_tracker_base_url }}" ]]; then
-            echo "::error::issue_tracker_base_url is required when issue_tracker is set"
-            exit 1
-          fi
-          if [[ -z "${{ inputs.issue_tracker_api_token }}" ]]; then
-            echo "::error::issue_tracker_api_token is required when issue_tracker is set"
-            exit 1
-          fi
-        fi
-        
-        echo "✓ Inputs validated"
-        echo "  Mode: ${{ inputs.analysis_mode }}"
-        echo "  Ticket: ${{ inputs.ticket_key }}"
+        echo "✓ Mode: ${{ inputs.analysis_mode }}"
+        echo "✓ Ticket: ${{ inputs.ticket_key }}"
 
     - name: Build prompt
       id: prompt
       shell: bash
       run: |
-        set -e
-        
-        ACTION_PATH="${{ github.action_path }}"
-        PROMPT_FILE="${ACTION_PATH}/prompts/${{ inputs.analysis_mode }}.md"
+        PROMPT_FILE="${{ github.action_path }}/prompts/${{ inputs.analysis_mode }}.md"
         
         if [[ ! -f "$PROMPT_FILE" ]]; then
           echo "::error::Prompt file not found: $PROMPT_FILE"
           exit 1
         fi
         
-        # Read and substitute template variables
         PROMPT=$(cat "$PROMPT_FILE")
         PROMPT="${PROMPT//\{\{TICKET_KEY\}\}/${{ inputs.ticket_key }}}"
+        PROMPT="${PROMPT//\{\{TICKET_SUMMARY\}\}/${{ inputs.ticket_summary }}}"
         
-        # Handle summary with proper escaping
-        SUMMARY=$(echo '${{ inputs.ticket_summary }}' | head -c 500)
-        PROMPT="${PROMPT//\{\{TICKET_SUMMARY\}\}/$SUMMARY}"
-        
-        # Handle description
         DESCRIPTION='${{ inputs.ticket_description }}'
-        if [[ -z "$DESCRIPTION" ]]; then
-          DESCRIPTION="No description provided"
-        fi
+        [[ -z "$DESCRIPTION" ]] && DESCRIPTION="No description provided"
         
-        # Build issue tracker URL if configured
-        TICKET_URL=""
-        case "${{ inputs.issue_tracker }}" in
-          jira)
-            TICKET_URL="${{ inputs.issue_tracker_base_url }}/browse/${{ inputs.ticket_key }}"
-            ;;
-          github)
-            TICKET_URL="${{ inputs.issue_tracker_base_url }}/issues/${{ inputs.ticket_key }}"
-            ;;
-          linear)
-            TICKET_URL="${{ inputs.issue_tracker_base_url }}/issue/${{ inputs.ticket_key }}"
-            ;;
-        esac
-        
-        # Write the complete prompt
         {
-          echo "prompt<<MUSHU_PROMPT_EOF"
+          echo "prompt<<MUSHU_EOF"
           echo "$PROMPT"
           echo ""
           echo "## Description"
           echo "$DESCRIPTION"
-          if [[ -n "$TICKET_URL" ]]; then
-            echo ""
-            echo "## Ticket URL"
-            echo "$TICKET_URL"
-          fi
-          if [[ -n "${{ inputs.custom_prompt }}" ]]; then
+          if [[ -n "${{ inputs.custom_instructions }}" ]]; then
             echo ""
             echo "## Additional Instructions"
-            echo "${{ inputs.custom_prompt }}"
+            echo "${{ inputs.custom_instructions }}"
           fi
-          echo "MUSHU_PROMPT_EOF"
+          echo "MUSHU_EOF"
         } >> $GITHUB_OUTPUT
-        
-        echo "✓ Prompt built for ${{ inputs.analysis_mode }} mode"
 
-    - name: Determine allowed tools
+    - name: Determine tools
       id: tools
       shell: bash
       run: |
         if [[ "${{ inputs.analysis_mode }}" == "fix" ]]; then
-          echo "tools=View,GlobTool,GrepTool,BatchTool,Edit,Write" >> $GITHUB_OUTPUT
-          echo "✓ Fix mode: file editing enabled"
+          echo "allowed=View,GlobTool,GrepTool,BatchTool,Edit,Write" >> $GITHUB_OUTPUT
         else
-          echo "tools=View,GlobTool,GrepTool,BatchTool" >> $GITHUB_OUTPUT
-          echo "✓ Read-only mode: analysis only"
+          echo "allowed=View,GlobTool,GrepTool,BatchTool" >> $GITHUB_OUTPUT
         fi
 
-    - name: Create branch for fix mode
+    - name: Create branch
       id: branch
       if: inputs.analysis_mode == 'fix'
       shell: bash
       run: |
-        set -e
-        
-        # Sanitize ticket key for branch name
         SAFE_KEY=$(echo "${{ inputs.ticket_key }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
         BRANCH_NAME="mushu/${SAFE_KEY}"
         
         git config user.name "Mushu Bot"
         git config user.email "mushu-bot@users.noreply.github.com"
         
-        # Check if branch already exists
         if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME" 2>/dev/null; then
-          echo "::warning::Branch $BRANCH_NAME already exists, using timestamp suffix"
           BRANCH_NAME="${BRANCH_NAME}-$(date +%s)"
         fi
         
         git checkout -b "$BRANCH_NAME"
-        
         echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
-        echo "✓ Created branch: $BRANCH_NAME"
+        echo "✓ Branch: $BRANCH_NAME"
 
-    - name: Run Claude Code
+    - name: Run Claude
       id: claude
       uses: anthropics/claude-code-action@beta
       with:
         anthropic_api_key: ${{ inputs.anthropic_api_key }}
         prompt: ${{ steps.prompt.outputs.prompt }}
-        allowed_tools: ${{ steps.tools.outputs.tools }}
+        allowed_tools: ${{ steps.tools.outputs.allowed }}
         timeout_minutes: ${{ inputs.timeout_minutes }}
 
-    - name: Commit changes (fix mode)
-      if: inputs.analysis_mode == 'fix'
+    - name: Commit changes
       id: commit
+      if: inputs.analysis_mode == 'fix'
       shell: bash
       run: |
-        set -e
-        
         if git diff --quiet && git diff --staged --quiet; then
           echo "has_changes=false" >> $GITHUB_OUTPUT
-          echo "::notice::No code changes were made by Mushu"
+          echo "::notice::No code changes made"
         else
           git add -A
-          
-          # Build commit message
-          COMMIT_MSG="[${{ inputs.ticket_key }}] ${{ inputs.ticket_summary }}"
-          COMMIT_BODY="Automated fix by Mushu AI"
-          
-          # Add ticket URL if available
-          case "${{ inputs.issue_tracker }}" in
-            jira)
-              COMMIT_BODY="${COMMIT_BODY}
-
-Jira: ${{ inputs.issue_tracker_base_url }}/browse/${{ inputs.ticket_key }}"
-              ;;
-            github)
-              COMMIT_BODY="${COMMIT_BODY}
-
-Fixes #${{ inputs.ticket_key }}"
-              ;;
-            linear)
-              COMMIT_BODY="${COMMIT_BODY}
-
-Linear: ${{ inputs.issue_tracker_base_url }}/issue/${{ inputs.ticket_key }}"
-              ;;
-          esac
-          
-          git commit -m "$COMMIT_MSG" -m "$COMMIT_BODY"
+          git commit -m "[${{ inputs.ticket_key }}] ${{ inputs.ticket_summary }}" \
+                     -m "Automated fix by Mushu AI"
           git push origin "${{ steps.branch.outputs.name }}"
-          
           echo "has_changes=true" >> $GITHUB_OUTPUT
-          echo "✓ Changes committed and pushed to ${{ steps.branch.outputs.name }}"
+          echo "✓ Changes committed"
         fi
 
-    - name: Create Pull Request
-      if: inputs.analysis_mode == 'fix' && steps.commit.outputs.has_changes == 'true'
+    - name: Create PR
       id: create-pr
+      if: inputs.analysis_mode == 'fix' && steps.commit.outputs.has_changes == 'true'
       uses: peter-evans/create-pull-request@v6
       with:
         token: ${{ inputs.github_token }}
@@ -297,149 +191,27 @@ Linear: ${{ inputs.issue_tracker_base_url }}/issue/${{ inputs.ticket_key }}"
           ### Summary
           ${{ inputs.ticket_summary }}
           
-          ### AI Analysis
-          
           <details>
-          <summary>Click to expand analysis</summary>
+          <summary>AI Analysis</summary>
           
           ```
           ${{ steps.claude.outputs.result }}
           ```
-          
           </details>
           
           ---
-          
-          > 🤖 *This PR was automatically created by [Mushu](https://github.com/liorkesten/mushu). Please review carefully before merging.*
+          *Created by [Mushu](https://github.com/liorkesten/mushu). Review before merging.*
         labels: ${{ inputs.pr_labels }}
         draft: ${{ inputs.pr_draft }}
-
-    - name: Post to Jira
-      if: inputs.issue_tracker == 'jira'
-      shell: bash
-      env:
-        ANALYSIS: ${{ steps.claude.outputs.result }}
-        PR_URL: ${{ steps.create-pr.outputs.pull-request-url }}
-        HAS_CHANGES: ${{ steps.commit.outputs.has_changes }}
-      run: |
-        set -e
-        
-        # Escape analysis for JSON
-        ESCAPED_ANALYSIS=$(echo "$ANALYSIS" | jq -Rs .)
-        
-        # Build extra content based on mode and results
-        EXTRA_CONTENT=""
-        if [[ "${{ inputs.analysis_mode }}" == "fix" ]]; then
-          if [[ "$HAS_CHANGES" == "true" && -n "$PR_URL" ]]; then
-            EXTRA_CONTENT=',{"type":"heading","attrs":{"level":4},"content":[{"type":"text","text":"🔗 Pull Request"}]},{"type":"paragraph","content":[{"type":"text","text":"","marks":[{"type":"link","attrs":{"href":"'"$PR_URL"'"}}]},{"type":"text","text":"'"$PR_URL"'","marks":[{"type":"link","attrs":{"href":"'"$PR_URL"'"}}]}]}'
-          else
-            EXTRA_CONTENT=',{"type":"paragraph","content":[{"type":"text","text":"ℹ️ No code changes were needed or possible."}]}'
-          fi
-        fi
-        
-        # Build mode emoji
-        case "${{ inputs.analysis_mode }}" in
-          bug) MODE_EMOJI="🐛" ;;
-          explore) MODE_EMOJI="🔍" ;;
-          fix) MODE_EMOJI="🔧" ;;
-        esac
-        
-        # Build Jira comment
-        COMMENT_BODY='{
-          "body": {
-            "type": "doc",
-            "version": 1,
-            "content": [
-              {
-                "type": "heading",
-                "attrs": {"level": 3},
-                "content": [{"type": "text", "text": "🐉 Mushu Analysis '"$MODE_EMOJI"'"}]
-              },
-              {
-                "type": "codeBlock",
-                "attrs": {"language": "markdown"},
-                "content": [{"type": "text", "text": '"$ESCAPED_ANALYSIS"'}]
-              }'"$EXTRA_CONTENT"'
-            ]
-          }
-        }'
-        
-        # Post comment to Jira
-        HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/jira_response.json \
-          -X POST \
-          -H "Content-Type: application/json" \
-          -u "${{ inputs.issue_tracker_email }}:${{ inputs.issue_tracker_api_token }}" \
-          --data "$COMMENT_BODY" \
-          "${{ inputs.issue_tracker_base_url }}/rest/api/3/issue/${{ inputs.ticket_key }}/comment")
-        
-        if [[ "$HTTP_CODE" -lt 200 || "$HTTP_CODE" -ge 300 ]]; then
-          echo "::warning::Failed to post Jira comment. HTTP $HTTP_CODE"
-          cat /tmp/jira_response.json
-        else
-          echo "✓ Comment posted to Jira ticket ${{ inputs.ticket_key }}"
-        fi
-        
-        # Update labels based on mode
-        case "${{ inputs.analysis_mode }}" in
-          bug)
-            LABEL_UPDATE='{"update":{"labels":[{"add":"mushu-analyzed"}]}}'
-            ;;
-          explore)
-            LABEL_UPDATE='{"update":{"labels":[{"remove":"mushu"},{"add":"mushu-done"}]}}'
-            ;;
-          fix)
-            if [[ "$HAS_CHANGES" == "true" ]]; then
-              LABEL_UPDATE='{"update":{"labels":[{"remove":"mushu-fix"},{"add":"mushu-pr-created"}]}}'
-            else
-              LABEL_UPDATE='{"update":{"labels":[{"remove":"mushu-fix"},{"add":"mushu-no-changes"}]}}'
-            fi
-            ;;
-        esac
-        
-        curl -s -X PUT \
-          -H "Content-Type: application/json" \
-          -u "${{ inputs.issue_tracker_email }}:${{ inputs.issue_tracker_api_token }}" \
-          --data "$LABEL_UPDATE" \
-          "${{ inputs.issue_tracker_base_url }}/rest/api/3/issue/${{ inputs.ticket_key }}" || echo "::warning::Failed to update Jira labels"
-        
-        echo "✓ Jira integration complete"
-
-    - name: Post to GitHub Issues
-      if: inputs.issue_tracker == 'github' && inputs.github_token != ''
-      shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.github_token }}
-        ANALYSIS: ${{ steps.claude.outputs.result }}
-        PR_URL: ${{ steps.create-pr.outputs.pull-request-url }}
-      run: |
-        set -e
-        
-        # Build comment
-        COMMENT="## 🐉 Mushu Analysis\n\n"
-        COMMENT+="**Mode:** ${{ inputs.analysis_mode }}\n\n"
-        COMMENT+='```\n'"$ANALYSIS"'\n```\n'
-        
-        if [[ -n "$PR_URL" ]]; then
-          COMMENT+="\n---\n🔗 **PR Created:** $PR_URL"
-        fi
-        
-        echo -e "$COMMENT" | gh issue comment "${{ inputs.ticket_key }}" --body-file -
-        
-        echo "✓ Comment posted to GitHub issue #${{ inputs.ticket_key }}"
 
     - name: Summary
       shell: bash
       run: |
         echo ""
-        echo "🐉 Mushu Analysis Complete"
-        echo "=========================="
-        echo "  Ticket: ${{ inputs.ticket_key }}"
-        echo "  Mode: ${{ inputs.analysis_mode }}"
-        if [[ "${{ inputs.analysis_mode }}" == "fix" ]]; then
-          echo "  Changes: ${{ steps.commit.outputs.has_changes }}"
-          if [[ -n "${{ steps.create-pr.outputs.pull-request-url }}" ]]; then
-            echo "  PR: ${{ steps.create-pr.outputs.pull-request-url }}"
-          fi
+        echo "🐉 Analysis Complete"
+        echo "==================="
+        echo "Ticket: ${{ inputs.ticket_key }}"
+        echo "Mode: ${{ inputs.analysis_mode }}"
+        if [[ "${{ steps.create-pr.outputs.pull-request-url }}" ]]; then
+          echo "PR: ${{ steps.create-pr.outputs.pull-request-url }}"
         fi
-        echo ""
-
