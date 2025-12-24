@@ -6,6 +6,8 @@
 
 <p align="center">
   <strong>AI-powered code analyst that reads your tickets and explores your codebase</strong>
+  <br/>
+  <sub>Named after a very good poodle 🐩</sub>
 </p>
 
 <p align="center">
