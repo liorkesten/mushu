@@ -54,7 +54,7 @@ jobs:
           esac
 
       - name: Run Mushu
-        uses: zafran-io/mushu@v1
+        uses: liorkesten/mushu@v1
         with:
           ticket_key: ${{ github.event.client_payload.key }}
           ticket_summary: ${{ github.event.client_payload.summary }}

@@ -85,7 +85,7 @@ jobs:
           fi
 
       - name: Run Mushu
-        uses: zafran-io/mushu@v1
+        uses: liorkesten/mushu@v1
         with:
           ticket_key: ${{ steps.inputs.outputs.key }}
           ticket_summary: ${{ steps.inputs.outputs.summary }}

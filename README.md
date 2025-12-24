@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/zafran-io/mushu/main/assets/mushu-logo.svg" alt="Mushu Logo" width="200"/>
+  <img src="https://raw.githubusercontent.com/liorkesten/mushu/main/assets/mushu-logo.svg" alt="Mushu Logo" width="200"/>
 </p>
 
 <h1 align="center">🐉 Mushu</h1>
@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/zafran-io/mushu/actions"><img src="https://img.shields.io/github/actions/workflow/status/zafran-io/mushu/test.yml?branch=main&style=flat-square&logo=github" alt="Build Status"></a>
-  <a href="https://github.com/zafran-io/mushu/releases"><img src="https://img.shields.io/github/v/release/zafran-io/mushu?style=flat-square&logo=github" alt="Release"></a>
-  <a href="https://github.com/zafran-io/mushu/blob/main/LICENSE"><img src="https://img.shields.io/github/license/zafran-io/mushu?style=flat-square" alt="License"></a>
-  <a href="https://github.com/zafran-io/mushu/stargazers"><img src="https://img.shields.io/github/stars/zafran-io/mushu?style=flat-square&logo=github" alt="Stars"></a>
+  <a href="https://github.com/liorkesten/mushu/actions"><img src="https://img.shields.io/github/actions/workflow/status/liorkesten/mushu/test.yml?branch=main&style=flat-square&logo=github" alt="Build Status"></a>
+  <a href="https://github.com/liorkesten/mushu/releases"><img src="https://img.shields.io/github/v/release/liorkesten/mushu?style=flat-square&logo=github" alt="Release"></a>
+  <a href="https://github.com/liorkesten/mushu/blob/main/LICENSE"><img src="https://img.shields.io/github/license/liorkesten/mushu?style=flat-square" alt="License"></a>
+  <a href="https://github.com/liorkesten/mushu/stargazers"><img src="https://img.shields.io/github/stars/liorkesten/mushu?style=flat-square&logo=github" alt="Stars"></a>
 </p>
 
 <p align="center">
@@ -76,7 +76,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: zafran-io/mushu@v1
+      - uses: liorkesten/mushu@v1
         with:
           ticket_key: ${{ inputs.ticket_key }}
           ticket_summary: ${{ inputs.ticket_summary }}
@@ -166,7 +166,7 @@ analysis_mode: fix
 Auto-analyze bugs and post findings back to Jira:
 
 ```yaml
-- uses: zafran-io/mushu@v1
+- uses: liorkesten/mushu@v1
   with:
     issue_tracker: jira
     issue_tracker_base_url: ${{ secrets.JIRA_BASE_URL }}
@@ -196,7 +196,7 @@ jobs:
   analyze:
     if: contains(github.event.issue.labels.*.name, 'bug')
     steps:
-      - uses: zafran-io/mushu@v1
+      - uses: liorkesten/mushu@v1
         with:
           ticket_key: ${{ github.event.issue.number }}
           ticket_summary: ${{ github.event.issue.title }}
@@ -283,7 +283,7 @@ mushu/
 Add project-specific context:
 
 ```yaml
-- uses: zafran-io/mushu@v1
+- uses: liorkesten/mushu@v1
   with:
     custom_prompt: |
       Codebase context:
@@ -325,7 +325,7 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 
 ```bash
 # Clone the repo
-git clone https://github.com/zafran-io/mushu.git
+git clone https://github.com/liorkesten/mushu.git
 
 # Create a branch
 git checkout -b feature/amazing-feature
@@ -344,9 +344,9 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## 💬 Support
 
 - 📖 [Documentation](docs/)
-- 🐛 [Report a Bug](https://github.com/zafran-io/mushu/issues/new?template=bug_report.md)
-- 💡 [Request a Feature](https://github.com/zafran-io/mushu/issues/new?template=feature_request.md)
-- 💬 [Discussions](https://github.com/zafran-io/mushu/discussions)
+- 🐛 [Report a Bug](https://github.com/liorkesten/mushu/issues/new?template=bug_report.md)
+- 💡 [Request a Feature](https://github.com/liorkesten/mushu/issues/new?template=feature_request.md)
+- 💬 [Discussions](https://github.com/liorkesten/mushu/discussions)
 
 ---
 

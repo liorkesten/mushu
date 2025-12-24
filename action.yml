@@ -310,7 +310,7 @@ Linear: ${{ inputs.issue_tracker_base_url }}/issue/${{ inputs.ticket_key }}"
           
           ---
           
-          > 🤖 *This PR was automatically created by [Mushu](https://github.com/zafran-io/mushu). Please review carefully before merging.*
+          > 🤖 *This PR was automatically created by [Mushu](https://github.com/liorkesten/mushu). Please review carefully before merging.*
         labels: ${{ inputs.pr_labels }}
         draft: ${{ inputs.pr_draft }}
 
